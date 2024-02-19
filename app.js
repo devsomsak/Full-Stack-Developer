@@ -99,8 +99,6 @@ async function init() {
   });
 
 
-  
-
   app.get("/", function (req, res, next) {
     res.json({ msg: "Hello Full Stack Developer" });
   });

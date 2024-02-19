@@ -3,6 +3,13 @@ var cors = require("cors");
 var bodyParser = require("body-parser");
 var jsonParser = bodyParser.json();
 var jwt = require("jsonwebtoken");
+const { v4: uuidv4 } = require("uuid");
+const mysql2 = require('mysql2/promise');
+// var dotenv = require ("dotenv")
+
+require("dotenv").config();
+
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 async function init() {
   var app = express();
@@ -98,8 +105,68 @@ async function init() {
     }
   });
 
+  app.get("/api/test", function (req, res, next) {
+    console.log("test");
+    res.json({ message: "test" });
+  });
 
-  
+  app.post("/api/checkout", express.json(), async (req, res) => {
+    try {
+        // create payment session
+        const { user, product } = req.body;
+        if (!user || !product || !user.name || !user.address || !product.name || !product.price || !product.quantity) {
+            return res.status(400).json({ error: "Invalid user or product data" });
+        }
+
+        const orderId = uuidv4();
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            line_items: [
+                {
+                    price_data: {
+                        currency: "thb",
+                        product_data: {
+                            name: product.name,
+                        },
+                        unit_amount: product.price * 100,
+                    },
+                    quantity: product.quantity,
+                },
+            ],
+            mode: "payment",
+            success_url: `http://localhost:8888/success.html?id=${orderId}`,
+            cancel_url: `http://localhost:8888/cancel.html?id=${orderId}`,
+        });
+
+        // create order in database (name, address, session id, status)
+        console.log("session", session);
+
+        const data = {
+            fullname: user.name,
+            address: user.address,
+            session_id: session.id,
+            status: session.status,
+            order_id: orderId,
+        };
+        const connection = await mysql2.createConnection({
+          host: 'localhost',
+          user: 'root',
+          database: 'test'
+      });
+
+        const [result] = await connection.query("INSERT INTO orders SET ?", data);
+        res.json({
+            user,
+            product,
+            order: result,
+        });
+    } catch (error) {
+        console.error("Error creating order:", error.message);
+        res.status(400).json({ error: "Error creating order" });
+    }
+});
+
+
 
   app.get("/", function (req, res, next) {
     res.json({ msg: "Hello Full Stack Developer" });
